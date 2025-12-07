@@ -8,6 +8,9 @@ from ui.simple_gui import ChessGUI
 from engine.neural_net import ChessNet
 import torch
 import os
+from ui.database import get_database
+from mysql.connector import Error
+from datetime import datetime
 
 
 class GameMenu:
@@ -23,7 +26,7 @@ class GameMenu:
         self.username = username
         self.root = tk.Tk()
         self.root.title("NeuroChess - Game Menu")
-        self.root.geometry("600x750")
+        self.root.geometry("1000x750")
         self.root.configure(bg='#0f0f1e')
         self.root.resizable(False, False)
         
@@ -114,61 +117,188 @@ class GameMenu:
         )
         user_label.pack(pady=25)
         
-        # Menu section
-        menu_frame = tk.Frame(main_container, bg='#0f0f1e')
-        menu_frame.pack(pady=40, padx=60, fill=tk.BOTH, expand=True)
-        
+        # Content container for split layout
+        content_container = tk.Frame(main_container, bg='#0f0f1e')
+        content_container.pack(fill=tk.BOTH, expand=True, padx=40, pady=20)
+
+        # LEFT COLUMN - Game Modes
+        left_frame = tk.Frame(content_container, bg='#0f0f1e')
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 20))
+
         # Section title
         tk.Label(
-            menu_frame,
-            text="Choose Your Game Mode",
+            left_frame,
+            text="Start New Game",
             font=("Segoe UI", 18, "bold"),
             bg='#0f0f1e',
             fg='#ffffff'
-        ).pack(pady=(0, 30))
+        ).pack(pady=(0, 30), anchor='w')
         
         # Two Player Mode Button
         two_player_btn = self.create_modern_button(
-            menu_frame,
+            left_frame,
             "🎮  Play with Friend\n(Two Players)",
             self.start_two_player,
             bg_color='#6366f1',
             hover_color='#7c3aed'
         )
-        two_player_btn.pack(pady=15, fill=tk.X, ipady=10)
+        two_player_btn.pack(pady=10, fill=tk.X, ipady=10)
         
         # Play vs AI Button
         ai_btn = self.create_modern_button(
-            menu_frame,
+            left_frame,
             "🤖  Challenge the AI\n(Single Player)",
             self.start_ai_game,
             bg_color='#8b5cf6',
             hover_color='#a78bfa'
         )
-        ai_btn.pack(pady=15, fill=tk.X, ipady=10)
+        ai_btn.pack(pady=10, fill=tk.X, ipady=10)
+
+        # RIGHT COLUMN - Recent Activity
+        right_frame = tk.Frame(content_container, bg='#16213e')
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(20, 0))
         
-        # View History Button
+        # History panel
+        self.create_history_panel(right_frame)
+
+        # Footer Buttons (Full Width)
+        footer_frame = tk.Frame(main_container, bg='#0f0f1e')
+        footer_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=40, pady=20)
+
+        # View Full History Button
         history_btn = self.create_modern_button(
-            menu_frame,
-            "📜  View Game History",
+            footer_frame,
+            "📜  View Full History",
             self.view_history,
             bg_color='#10b981',
             hover_color='#34d399'
         )
-        history_btn.pack(pady=15, fill=tk.X, ipady=10)
+        history_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
         
-        # Spacer
-        tk.Frame(menu_frame, bg='#0f0f1e', height=30).pack()
-        
-        # Logout button with different styling
+        # Logout button
         logout_btn = self.create_modern_button(
-            menu_frame,
+            footer_frame,
             "← Logout",
             self.logout,
             bg_color='#374151',
             hover_color='#4b5563'
         )
-        logout_btn.pack(pady=10, fill=tk.X, ipady=5)
+        logout_btn.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+
+    def create_history_panel(self, parent):
+        """Create the recent activity panel."""
+        # Header
+        header = tk.Frame(parent, bg='#1a1a2e', height=50)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
+        
+        tk.Label(
+            header,
+            text="📋 Recent Activity",
+            font=("Segoe UI", 12, "bold"),
+            bg='#1a1a2e',
+            fg='#e0e0ff'
+        ).pack(side=tk.LEFT, padx=15, pady=10)
+
+        # List Container
+        self.history_list_frame = tk.Frame(parent, bg='#16213e')
+        self.history_list_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        
+        self.load_recent_games()
+
+    def load_recent_games(self):
+        """Load recent games into the history panel."""
+        try:
+            db = get_database()
+            connection = db.get_connection()
+            cursor = connection.cursor(dictionary=True)
+            
+            cursor.execute("""
+                SELECT * FROM game_history 
+                WHERE player1_username = %s OR player2_username = %s 
+                ORDER BY played_at DESC 
+                LIMIT 5
+            """, (self.username, self.username))
+            
+            games = cursor.fetchall()
+            cursor.close()
+            
+            if not games:
+                tk.Label(
+                    self.history_list_frame,
+                    text="No games played yet.\nStart a game to see history!",
+                    font=("Segoe UI", 10, "italic"),
+                    bg='#16213e',
+                    fg='#a0a0c0',
+                    justify=tk.CENTER
+                ).pack(expand=True)
+            else:
+                for game in games:
+                    self.create_history_item(game)
+                    
+        except Error as e:
+            print(f"Error loading recent games: {e}")
+            tk.Label(
+                self.history_list_frame,
+                text="Unable to load history",
+                font=("Segoe UI", 10),
+                bg='#16213e',
+                fg='#ef4444'
+            ).pack(pady=10)
+
+    def create_history_item(self, game):
+        """Create a single history item widget."""
+        item_frame = tk.Frame(self.history_list_frame, bg='#1a1a2e', height=60)
+        item_frame.pack(fill=tk.X, pady=1, padx=5)
+        item_frame.pack_propagate(False)
+        
+        # Determine details
+        opponent = game['player2_username'] if game['player1_username'] == self.username else game['player1_username']
+        winner = game['winner']
+        
+        if winner == self.username:
+            result_color = '#10b981' # Green
+            result_text = "V"
+        elif winner == opponent:
+            result_color = '#ef4444' # Red
+            result_text = "L"
+        else:
+            result_color = '#f59e0b' # Yellow
+            result_text = "D"
+            
+        date_str = game['played_at'].strftime('%b %d, %H:%M')
+
+        # Result Indicator
+        tk.Label(
+            item_frame,
+            text=result_text,
+            font=("Segoe UI", 14, "bold"),
+            bg='#1a1a2e',
+            fg=result_color,
+            width=3
+        ).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Game Info
+        info_frame = tk.Frame(item_frame, bg='#1a1a2e')
+        info_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        tk.Label(
+            info_frame,
+            text=f"vs {opponent}",
+            font=("Segoe UI", 11, "bold"),
+            bg='#1a1a2e',
+            fg='white',
+            anchor='w'
+        ).pack(fill=tk.X)
+        
+        tk.Label(
+            info_frame,
+            text=date_str,
+            font=("Segoe UI", 9),
+            bg='#1a1a2e',
+            fg='#a0a0c0',
+            anchor='w'
+        ).pack(fill=tk.X)
     
     def start_two_player(self):
         """Start two-player game."""
