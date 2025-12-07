@@ -1,0 +1,4 @@
+"""
+NeuroChess UI Module
+"""
+
